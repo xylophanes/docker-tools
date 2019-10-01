@@ -1,0 +1,343 @@
+#!/bin/bash
+#
+#---------------------------------------
+# Start a docker container
+# (C) M.A. O'Neill, Tumbling Dice, 2018
+#
+# $1 overide resetting of VNC password
+#---------------------------------------
+#
+
+
+###############################
+# Container details (editable)
+###############################
+
+shm_size="8G"
+docker_repository="centos-ssh-dev" 
+docker_image="generic.27.Sept.2019" 
+docker_container="generic"
+ssh_port="2025"
+reset_vnc_passwd="TRUE" 
+vnc_port="5903" 
+vnc_screen=":3" 
+hostLocal="/usr/local:/hostLocal" 
+hostHome="/home/export:/hostHome"
+
+
+#--------------------
+# Parse command line
+#--------------------
+
+if [ "$1" = "usage" ]  ||  [ "$1" = "help"  ] ; then
+        echo ""
+        echo "    dockerboot version 2.00"
+        echo "    (C) M.A. O'Neill, Tumbling Dice, 2019"
+        echo ""
+        echo "    Usage: $docker_container.dockerboot [usage | help] | [vncpasswd | novncpasswd]"
+        echo ""
+
+        exit 1
+
+
+#--------------------------
+# Overide VNC password set
+#--------------------------
+
+elif [ "$vnc_port" != "" ] ; then
+	if [ "$1" = "vncpasswd" ] ; then
+		reset_vnc_passwd=TRUE
+	elif [ "$1" = "novncpasswd" ] ; then
+		reset_vnc_passwd=FALSE
+	elif [ "$1" != "" ] ; then
+		echo ""
+		echo "$docker_container.dockerboot ERROR: 'vncpasswd' or 'novncpasswd' expected"
+		echo ""
+
+		exit 255
+	fi	
+fi
+
+
+#----------------
+# Display banner
+#----------------
+
+echo ""
+echo "    dockerboot version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2018"
+echo ""
+
+
+#-----------------------------------
+# User i.d (to run container under)
+#-----------------------------------
+
+user=$(ask "User i.d. (to run container ssh daemon/vncserver under)")
+if [ $user = "" ]; then
+	user=$(whoami)
+	echo "WARNING: running container ssh daemon/vncserver under current user i.d. ($user)"
+	echo ""
+fi
+
+
+#-------------------------------------------
+# Are the ports this container wants to use
+# already in use?
+#-------------------------------------------
+#----------
+# SSH port
+#----------
+
+if [ "$(lsof -i -P -n |& grep $ssh_port |& grep LISTEN |& tr -d '\n')" != "" ] ; then
+	echo ""
+	echo "$docker_container.dockerboot: ssh port ($ssh_port) in use"
+	echo ""
+
+	exit 255 
+fi
+
+
+#----------
+# VNC port
+#----------
+
+if [ "$vnc_port" != "" ] ; then
+	if [ "$(lsof -i -P -n | grep $vnc_port | grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "$docker_container.dockerboot: vnc port ($vnc_port) in use"
+		echo ""
+
+		exit 255 
+	fi	
+fi
+	
+
+#----------------------
+# Is docker installed?
+#----------------------
+
+docker_installed=$(which dockerd |& grep "no")
+if [ "$docker_installed" != "" ] ; then
+	echo
+	echo "$docker_container.dockerboot ERROR: docker is not installed on this host"
+	echo
+
+	exit 255 
+fi
+
+
+#---------------------
+# Is dockerd running?
+#---------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+	echo
+        echo "$docker_container.dockerboot ERROR: dockerd is not running on this host"
+        echo
+
+        exit 255 
+fi
+
+
+
+#-----------------------
+# Is container running?
+#-----------------------
+
+container_running=$(docker ps |& grep $docker_container |& awk '{print $1}' |& tr -d '\n')
+if [ "$container_running" != "" ] ; then
+	echo ""
+	echo "$docker_container.dockerboot ERROR: container $docker_container is already running"
+	echo ""
+
+	exit 255 
+fi
+
+
+#-----------------------
+# Does container exist?
+#-----------------------
+
+container_exists=$(docker ps -a |& grep $docker_container |& awk '{print $1}' |& tr -d '\n')
+
+
+#------------------------------------
+# Found container - so just start it
+#------------------------------------
+
+if [ "$container_exists" != "" ] ; then
+
+	docker start $docker_container 2> /dev/null
+
+
+	#--------------------------
+	# Did the container start?
+	#--------------------------
+
+	if [ $? -ne 0 ] ; then
+		echo ""
+		echo "$docker_container.dockerboot ERROR: failed to start container $docker_container"
+		echo ""
+
+		exit 255 
+	fi
+
+
+#----------------------------------------
+# Load image into container and start it
+#----------------------------------------
+
+else
+
+
+	#---------------------
+	# Set image arguments 
+	#---------------------
+
+	if [ "$hostHome" != "" ] ; then
+		hostHomeArg="-v $hostHome"
+	else
+		hostHomeArg=""
+	fi
+
+	if [ "$hostLocal" != "" ] ;  then
+		hostLocalArg="-v $hostLocal"
+	else
+		hostLocalArg=""
+	fi
+
+	if [ "$vnc_screen" != "" ] ; then
+		vnc_portArg="-p ${vnc_port}:${vnc_port}"
+	else
+		vnc_portArg=""
+	fi
+
+	ssh_portArg="-p ${ssh_port}:22"
+
+
+	#-----------------------
+	# Load image and run it 
+	#-----------------------
+
+	docker run --cap-add=SYS_PTRACE                                              \
+                   -v /dev/shm --tmpfs /dev/shm:rw,nosuid,nodev,exec,size=$shm_size  \
+		   $hostHomeArg                                                      \
+       		   $hostLocalArg                                                     \
+              	   -d                                                                \
+               	   $ssh_portArg                                                      \
+               	   $vnc_portArg                                                      \
+               	   -h $docker_container                                              \
+                   --name $docker_container                                          \
+              	   ${docker_repository}:${docker_image} /usr/sbin/sshd -D 2> /dev/null
+
+
+	#--------------------------
+	# Did the container start?
+	#--------------------------
+
+	if [ $? -ne 0 ] ; then
+
+
+		#-----------------------
+		# Clear service entries
+		#-----------------------
+
+		echo ""
+		echo "$docker_container.dockerboot ERROR: failed to start container"
+		echo ""
+
+		exit 255 
+	fi
+fi
+
+
+########################################################
+# Start service (edit to start any ones which we need)
+########################################################
+
+
+#---------------------------------------------------
+# VNC server (run under identity of contained user)
+#---------------------------------------------------
+
+if [ "$vnc_screen" != "" ] ; then
+
+
+	#--------------------------------
+	# Set VNC password if we need to
+	#--------------------------------
+
+	docker exec --user $user $docker_container havevncpasswd 2> /dev/null
+	if [ $? -ne 0 ] ; then
+		echo "VNC password required"
+		docker exec --interactive --tty --user $user $docker_container vncpasswd
+	elif [ "$reset_vnc_passwd" = TRUE ] ; then
+		echo "VNC password reset forced"
+		docker exec --interactive --tty --user $user $docker_container vncpasswd
+	fi	
+
+
+	#-------------------------
+	# Try to start VNC server
+	#-------------------------
+
+	docker exec --user $user $docker_container vncserver $vnc_screen 2> /dev/null
+
+
+	#------------------------
+	# Did VNC service start?
+	#------------------------
+
+	if [ $? -ne 0 ] ; then
+		echo ""
+        	echo "$docker_container.dockerboot ERROR: failed to start vnc service"
+     		echo ""
+
+        	exit 255 
+	fi	
+fi
+
+
+#-------------
+# We are done
+#-------------
+
+echo ""
+echo "$docker_container.dockerboot: container started"
+echo ""
+
+
+#----------------------------
+# Display container settings
+#----------------------------
+
+echo "docker repository: $docker_repository"
+echo "docker image     : $docker_image" 
+echo "docker container : $docker_container"
+echo "ssh_port         : $ssh_port"
+
+
+#------------------------------------
+# Only display details of VNC server
+# if one was started
+#------------------------------------
+
+if [ "$vnc_screen" != "" ] ; then
+	echo "vnc port         : $vnc_port"
+	echo "vnc screen       : $vnc_screen"
+fi
+
+if [ "$hostLocal" != "" ] ; then
+	echo "hostLocal        : $hostLocal"
+fi
+
+if [ "$hostHome" != "" ] ; then
+	echo "hostHome         : $hostHome"
+fi
+
+echo ""
+
+exit 0
+

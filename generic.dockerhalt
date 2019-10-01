@@ -1,0 +1,153 @@
+#!/bin/bash
+#
+#----------------------------------------
+# Halt a container gracefully
+# (C) M.A. O'Neill, Tumbling Dice 2018
+#----------------------------------------
+
+
+###############################
+# Container details (editable)
+###############################
+
+docker_container=generic 
+vnc_screen=:2 
+
+
+#--------------------
+# Parse command line
+#--------------------
+
+if [ "$1" = "usage" ] || [ "$1" = "help" ] ; then
+	echo ""
+	echo "    dockerhalt version 1,00"
+	echo "    (C) M.A. O'Neill, Tumbling Dice, 2018"
+	echo ""
+	echo "    Usage: dockerhalt [usage | help] | [kill]"
+	echo ""
+
+	exit 1
+fi
+
+
+#----------------
+# Display banner
+#----------------
+
+echo ""
+echo "    dockerhalt version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2018"
+echo ""
+
+
+#----------------------
+# Is docker installed?
+#----------------------
+
+docker_installed=$(which dockerd | grep "no")
+if [ "$docker_installed" != "" ] ; then
+        echo
+        echo "$docker_container.dockerBoot ERROR: docker is not installed on this host"
+        echo
+
+        exit -1
+fi
+
+
+#---------------------
+# Is dockerd running?
+#---------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+        echo
+        echo "$docker_container.dockerBoot ERROR: dockerd is not running on this host"
+        echo
+
+        exit -1
+fi
+
+
+#-----------------------
+# Is container running?
+#-----------------------
+
+container_running=$(docker ps |& grep $docker_container |& awk '{print $1}' |& tr -d '\n')
+if [ "$container_running" != "" ] ; then
+
+
+	####################################################
+	# Stop any services running in container (editable)
+	####################################################
+
+
+	#------------
+	# VNC server
+	#------------
+
+	if [ "$vnc_screen" != "none" ] ; then
+		docker exec --user $docker_container -d $docker_container vncserver -kill $vnc_screen 2> /dev/null
+ 	fi	
+
+
+	#--------------------
+	# Stop the container
+	#--------------------
+
+	docker stop $docker_container 2> /dev/null
+
+
+	#---------------------------------------
+	# If kill is specified delete container
+	#---------------------------------------
+
+	if [ "$1" = "kill" ] ;  then
+		docker rm $docker_container >& /dev/null
+
+	       	echo ""
+       		echo "$docker_container.dockerhalt: container stopped and removed"
+       		echo ""
+
+
+	#------------------------
+	# Don't remove container
+	#------------------------
+
+	else
+	       	echo ""
+       		echo "$docker_container.dockerhalt: container stopped"
+       		echo ""
+	fi	
+
+
+#--------------------------
+# Container is not running
+#--------------------------
+#------------------
+# Remove container
+#------------------
+
+elif [ "$1" = "kill" ] ; then
+	docker rm $docker_container 2> /dev/null
+
+	echo ""
+        echo "$docker_container.dockerhalt: container is not running (and has been removed)"
+        echo ""
+
+#-----------------
+# Leave container
+#-----------------
+
+else
+	echo ""
+        echo "$docker_container.dockerhalt: container is not running"
+        echo ""
+fi
+
+
+#-------------
+# We are done
+#-------------
+
+exit 0
+

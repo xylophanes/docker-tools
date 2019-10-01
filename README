@@ -1,0 +1,48 @@
+Centos 7 Docker CE container image with simple (bash based) management tools.
+
+The Centos container supports a full development environment:
+
+* gcc tool chain
+* gdb
+* bash,sh,ksh,tcsh etc
+* sshd access (secure shell)
+* vnc access (remote desktop)
+* PUPS/P3 (Organic computing environment)
+
+In addition there are a number of shell scripts to manage this image:
+
+1. bootsetup: creates a script to deploy a customisable Centos container based on
+   the generic Centos 7 image.
+
+2. dockerboot.in: template script for customisable container boot script (used by
+   bootsetup).
+
+3. dockerhalt.in: template script for cusomisable container halt script (used by
+   bootsetup).
+
+4. dockerflatten: utilility to image (modified) container and place it in specified
+   image repository.
+
+5. generic.dockerboot: example boot script
+
+6. generic.dockerhalt: example halt script
+
+To create a repository containing intial image (assuming you have Docker CE installed on
+your Linux box) type:
+
+docker pull coytius/centos-ssh-dev (should create image centos-ssh-dev:generic.27.Sept.2019
+locally)
+
+Then:
+
+generic.dockerboot (to start container)
+
+ssh -p 2025 generic@localhost (to access container) [password is: 12qw34er]
+
+generic.dockerhalt [kill] to stop container - the optional kill parameter removes the
+container. If you have made changes in the container, you may want to commit them. To
+do this:
+
+generic.dockerhalt (halt container but don't delete it)
+dockerflatten      (follow interactive instructions)
+generic.dockerhalt kill (remove container once it has been committed to repository
