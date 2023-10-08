@@ -1,0 +1,93 @@
+#!/bin/bash 
+#
+#--------------------------------------
+# Flatten docker image optimising space
+# (C) M.A. O'Neill, Tumbling Dice 2021
+#--------------------------------------
+#---------------
+# Display banner
+#---------------
+
+echo ""
+echo "    dockerflatten version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2021"
+echo ""
+
+
+#---------------------
+# Is docker installed?
+#---------------------
+
+docker_installed= $(which dockerd |& grep "no")
+if [ "$docker_installed" != "" ] ; then
+        echo
+        echo "    dockerflatten ERROR: docker is not installed on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#--------------------
+# Is dockerd running?
+#--------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+        echo
+        echo "    dockerflatten ERROR: dockerd is not running on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#-------------------------------------------------
+# Get docker parameters (for flattening operation)
+#-------------------------------------------------
+
+echo ""
+docker images
+echo ""
+
+
+docker_repository=$(ask "    docker repository name")
+if [ "$docker_repository" = "" ] ; then
+	docker_repository="centos-ssh-dev"
+	echo "    dockerflatten WARNING: using default docker repository: '$docker_repository'"
+	echo ""
+elif [ "$docker_repository" = "q" ] || [ "$docker_repository" = "quit" ] ; then
+        exit 1 
+fi
+
+
+docker_image=$(ask "    docker image name")
+if [ "$docker_image" = "" ] ; then
+	echo "    dockerflatten ERROR: expecting docker image name"
+	exit 255 
+elif [ "$docker_image" = "q" ] || [ "$docker_image" = "quit" ] ; then
+        exit 1
+fi
+
+
+docker_container=$(ask "    docker container name")
+if [ "$docker_image" = "" ] ; then
+	echo "    dockerflatten ERROR: expecting docker container name"
+	exit 255 
+elif [ "$docker_container" == "q" ] || [ "$docker_container" = "quit" ] ; then
+        exit 255 
+
+fi
+
+
+echo ""
+echo "    flattening container $docker_container and saving it to ${docker_repository}:${docker_image}"
+echo ""
+
+docker export $docker_container | docker import - "$docker_repository:$docker_image"
+
+echo ""
+echo "    finished"
+echo ""
+
+exit 0

@@ -1,0 +1,626 @@
+#!/bin/bash
+#
+#-------------------------------------------
+# Start a docker container
+# (C) M.A. O'Neill, Tumbling Dice, 2021-2023
+#
+# $1 overide resetting of VNC password
+#-------------------------------------------
+##############################
+# Container details (editable)
+##############################
+
+mem_size="MEM_SIZE"
+shm_size="SHM_SIZE"
+docker_repository="REPOSITORY"
+docker_image="IMAGE"
+docker_container="CONTAINER"
+container_running=TRUE
+remove="REMOVE"
+ip_addr="IP_ADDR"
+ssh_port="SSH_PORT"
+smtp_port="SMTP_PORT"
+http_port="HTTP_PORT"
+https_port="HTTPS_PORT"
+reset_vnc_passwd="RESET_VNC_PASSWD"
+vnc_port="VNC_PORT"
+vnc_screen="VNC_SCREEN"
+vnc_id="VNC_ID"
+vnc_geometry="VNC_GEOMETRY"
+hostLocal="HOSTLOCAL"
+hostHome="HOSTHOME"
+
+
+#-------------------
+# Handler for SIGINT
+#-------------------
+
+function abort_script() 
+{
+
+	#----------------------------------------------
+	# If container is running stop it and remove it
+	#----------------------------------------------
+
+	if [ $container_running = TRUE ] ; then
+		docker stop $docker_container
+		docker rm $docker_container
+	fi
+
+	echo ""
+	echo "    *** aborted (SIGINT)"
+	echo ""
+
+	exit 255
+
+}
+
+trap abort_script SIGINT
+
+
+#-------------------
+# Parse command line
+#-------------------
+
+if [ "$1" = "usage" ]  ||  [ "$1" = "help"  ] ; then
+        echo ""
+        echo "    dockerboot version 2.00"
+        echo "    (C) M.A. O'Neill, Tumbling Dice, 2021-2023"
+        echo ""
+        echo "    Usage: $docker_container.dockerboot [usage | help] | [vncpasswd | novncpasswd]"
+        echo ""
+
+        exit 1
+
+
+#-------------------------
+# Overide VNC password set
+#-------------------------
+
+elif [ "$vnc_port" != "" ] ; then
+	if [ "$1" = "vncpasswd" ] ; then
+		reset_vnc_passwd=TRUE
+	elif [ "$1" = "novncpasswd" ] ; then
+		reset_vnc_passwd=FALSE
+	elif [ "$1" != "" ] ; then
+		echo ""
+		echo "$docker_container.dockerboot ERROR: 'vncpasswd' or 'novncpasswd' expected"
+		echo ""
+
+		exit 1 
+	fi	
+fi
+
+
+#---------------
+# Display banner
+#---------------
+
+echo ""
+echo "    dockerboot version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2021-2023"
+echo ""
+
+
+#----------------------------------
+# User i.d (to run container under)
+#----------------------------------
+
+user=$(ask "    User i.d. (to run container ssh daemon/vncserver under)")
+if [ "$user" = q ] || [ "$user" = quit ] ; then
+
+	echo ""
+	echo "    *** aborted (quit)"
+	echo ""
+
+	exit 255
+
+elif [ $user = "" ]; then
+	user=$(whoami)
+	echo "    $docker_congtainer.dockerboot WARNING: running container ssh daemon/vncserver under current user i.d. ($user)"
+	echo ""
+fi
+
+
+#------------------------------------------
+# Are the ports this container wants to use
+# already in use?
+#------------------------------------------
+#-----------------
+# Any i.p. address
+#-----------------
+
+if [ "$ip_addr" = "" ] ; then
+	eff_ip_addr=0.0.0.0
+
+
+#----------------------
+# Specific i.p. address
+#----------------------
+
+else
+	eff_ip_addr=$ip_addr
+fi
+
+
+#---------
+# SSH port
+#---------
+
+if [ "$ssh_port" != "" ] ; then
+	if [ "$(lsof -i -P -n |& grep $eff_ip_addr:$ssh_port |& grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: ssh port ($ssh_port) in use"
+		echo ""
+
+		exit 255 
+	fi
+fi
+
+
+#----------
+# SMTP port
+#----------
+
+if [ "$smtp_port" != "" ] ; then
+	if [ "$(lsof -i -P -n |& grep $eff_ip_addr:$smtp_port |& grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: smtp port ($smtp_port) in use"
+		echo ""
+
+		exit 255 
+	fi
+fi
+
+#----------
+# http port
+#----------
+
+if [ "$http_port" != "" ] ; then
+	if [ "$(lsof -i -P -n |& grep $eff_ip_addr:$http_port |& grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: http port ($http_port) in use"
+		echo ""
+
+		exit 255 
+	fi
+fi
+
+
+#-----------
+# https port
+#-----------
+
+if [ "$https_port" != "" ] ; then
+	if [ "$(lsof -i -P -n |& grep $eff_ip_addr:$https_port |& grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: https port ($https_port) in use"
+		echo ""
+
+		exit 255 
+	fi
+fi
+
+
+#---------
+# VNC port
+#---------
+
+if [ "$vnc_port" != "" ] ; then
+	if [ "$(lsof -i -P -n | grep eff_ip_addr:$vnc_port | grep LISTEN |& tr -d '\n')" != "" ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: vnc port ($vnc_port) in use"
+		echo ""
+
+		exit 255 
+	fi	
+fi
+	
+
+#---------------------
+# Is docker installed?
+#---------------------
+
+docker_installed=$(which dockerd |& grep "no")
+if [ "$docker_installed" != "" ] ; then
+	echo ""
+	echo "    $docker_container.dockerboot ERROR: docker is not installed on this host"
+	echo ""
+
+	exit 255 
+fi
+
+
+#--------------------
+# Is dockerd running?
+#--------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+	echo
+        echo "    $docker_container.dockerboot ERROR: dockerd is not running on this host"
+        echo
+
+        exit 255 
+fi
+
+
+
+#----------------------
+# Is container running?
+#----------------------
+
+container_running=$(docker ps |& grep $docker_container |& awk '{print $1}' |& tr -d '\n')
+if [ "$container_running" != "" ] ; then
+	echo ""
+	echo "    $docker_container.dockerboot ERROR: container $docker_container is already running"
+	echo ""
+
+	exit 255 
+fi
+
+
+#----------------------
+# Does container exist?
+#----------------------
+
+container_exists=$(docker ps -a |& grep $docker_container |& awk '{print $1}' |& tr -d '\n')
+
+
+#-----------------------------------
+# Found container - so just start it
+#-----------------------------------
+
+if [ "$container_exists" != "" ] ; then
+
+	docker start $docker_container                                1> /dev/null 2> /dev/null
+	docker exec  $docker_container bash -c "$startup_command_set" 1> /dev/null 2> /dev/null
+
+
+	#-------------------------
+	# Did the container start?
+	#-------------------------
+
+	if [ $? -ne 0 ] ; then
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: failed to restart container $docker_container"
+		echo ""
+
+		exit 255 
+
+
+	#------------------
+	# Container running
+	#------------------
+
+	else
+		container_running=TRUE
+	fi
+
+
+#---------------------------------------
+# Load image into container and start it
+#---------------------------------------
+
+else
+
+
+	#--------------------
+	# Set image arguments 
+	#--------------------
+	#---------------------------------
+	# Remove container on exit if TRUE
+	#---------------------------------
+
+	if [ "$remove" = TRUE ] ; then
+		removeArg="--rm"
+	else
+		removeArg=""
+	fi
+
+
+	#-----------------------
+        # Export /home from host 
+	#-----------------------
+	if [ "$hostHome" != "" ] ; then
+		hostHomeArg="-v $hostHome"
+	else
+		hostHomeArg=""
+	fi
+
+
+	#----------------------------
+	# Export /usr/local from host
+	#----------------------------
+
+	if [ "$hostLocal" != "" ] ;  then
+		hostLocalArg="-v $hostLocal"
+	else
+		hostLocalArg=""
+	fi
+
+
+	#---------------------
+	# Container IP address
+	#---------------------
+
+	if [ "$ip_addr" != "" ] ; then
+		ip_addrArg="--ip $ip_addr"
+	else
+		ip_addrArg=""
+	fi
+
+
+	#---------------------
+	# Container VNC screen
+	#---------------------
+
+	if [ "$vnc_screen" != "" ] ; then
+		vnc_portArg="-p $eff_ip_addr:${vnc_port}:${vnc_port}"
+	else
+		vnc_portArg=""
+	fi
+
+
+	#---------------------
+	# Container web server
+	#---------------------
+
+	if [ "$http_port" != "" ] ; then
+		http_portArg="-p $eff_ip_addr:${http_port}:80"
+
+	else
+		http_portArg=""
+	fi
+
+
+	#-----------------------------
+	# Container sercure web server
+	#-----------------------------
+
+	if [ "$https_port" != "" ] ; then
+		https_portArg="-p $eff_ip_addr:${https_port}:433"
+
+	else
+		https_portArg=""
+	fi
+
+
+	#---------------------
+	# Container ssh access 
+	#---------------------
+
+	if [ "$ssh_port" != "" ] ; then
+		ssh_portArg="-p $eff_ip_addr:${ssh_port}:22"
+	else
+		ssh_portArg=""
+	fi
+
+
+	#----------------------
+	# Container SMTP access 
+	#----------------------
+
+	if [ "$smtp_port" != "" ] ; then
+		smtp_portArg="-p $eff_ip_addr:${smtp_port}:25"
+	else
+		smtp_portArg=""
+	fi
+
+
+	#-------------------------------
+	# Container specific command set
+	#-------------------------------
+
+	if [ "$ssh_port" = "" ] ; then
+		startup_command_set="/etc/rc.local; /usr/bin/sleep infinity"
+	else
+		startup_command_set="/etc/rc.local; /usr/sbin/sshd -D"
+	fi
+
+
+	#----------------------
+	# Load image and run it 
+	#----------------------
+
+	docker run --cap-add SYS_PTRACE,PERFMON                                                    \
+		   --security-opt seccomp=unconfined						   \
+		   --memory=$mem_size								   \
+                   -v /dev/shm --tmpfs /dev/shm:rw,nosuid,nodev,exec,size=$shm_size                \
+		   $removeArg									   \
+		   $hostHomeArg                                                                    \
+       		   $hostLocalArg                                                                   \
+              	   -d                                                                              \
+		   $ip_addrArg									   \
+               	   $ssh_portArg                                                                    \
+               	   $smtp_portArg                                                                   \
+		   $http_portArg                                                                   \
+               	   $https_portArg                                                                  \
+               	   $vnc_portArg                                                                    \
+               	   -h $docker_container                                                            \
+                   --name $docker_container                                                        \
+              	   ${docker_repository}:${docker_image} bash -c "$startup_command_set" 1> /dev/null 2> /dev/null
+
+
+	#-------------------------
+	# Did the container start?
+	#-------------------------
+
+	if [ $? -ne 0 ] ; then
+
+
+		#----------------------
+		# Clear service entries
+		#----------------------
+
+		echo ""
+		echo "    $docker_container.dockerboot ERROR: failed to start container"
+		echo ""
+
+		exit 255 
+
+
+	#------------------
+	# Container running
+	#------------------
+
+	else
+		container_running=TRUE
+	fi
+fi
+
+
+######################################################
+# Start service (edit to start any ones which we need)
+######################################################
+#--------------------------------------------------
+# VNC server (run under identity of contained user)
+#--------------------------------------------------
+
+if [ "$vnc_screen" != "" ] ; then
+
+
+	#-------------------------------
+	# Set VNC password if we need to
+	#-------------------------------
+
+	docker exec --user $user $docker_container havevncpasswd 1> /dev/null 2> /dev/null
+	if [ $? -ne 0 ] ; then
+		echo "    VNC password required"
+		echo ""
+		docker exec --interactive --tty --user $user $docker_container vncpasswd
+		echo ""
+	elif [ "$reset_vnc_passwd" = TRUE ] ; then
+		echo "    VNC password reset forced"
+		echo ""
+		docker exec --interactive --tty --user $user $docker_container vncpasswd
+		echo ""
+	fi	
+
+
+	#------------------------
+	# Try to start VNC server
+	#------------------------
+	#-------------------------------
+	# Remove junk from previous runs
+	#-------------------------------
+
+	docker exec --user root  $docker_container /bin/bash -c "rm -rf /tmp/.X11-unix"    1> /dev/null 2> /dev/null
+	docker exec --user $user $docker_container /bin/bash -c "rm /tmp/.X{$vnc_id}-lock" 1> /dev/null 2> /dev/null
+
+
+	#--------------------
+	# Start this instance
+	#--------------------
+
+	docker exec --user $user $docker_container /bin/bash -c "export USER=$user; vncserver -geometry $vnc_geometry $vnc_screen" 1> /dev/null 2> /dev/null
+
+
+	#-----------------------
+	# Did VNC service start?
+	#-----------------------
+
+	if [ $? -ne 0 ] ; then
+		echo ""
+        	echo "    $docker_container.dockerboot ERROR: failed to start vnc service"
+     		echo ""
+
+        	exit 255 
+	fi	
+fi
+
+
+#------------
+# We are done
+#------------
+
+echo ""
+echo "    $docker_container.dockerboot: container started"
+echo ""
+
+
+#---------------------------
+# Display container settings
+#---------------------------
+
+echo "    docker repository: $docker_repository"
+echo "    docker image     : $docker_image" 
+echo "    docker container : $docker_container"
+
+
+#-----------
+# IP address 
+#-----------
+
+if [ "$ip_addr" != "" ] ; then
+	echo "    IP address       : $ip_addr"
+fi
+
+
+#---------
+# ssh port
+#---------
+
+if [ "$ssh_port" != "" ] ; then
+	echo "    ssh port         : $ssh_port"
+fi
+
+
+#----------
+# SMTP port
+#----------
+
+if [ "$smtp_port" != "" ] ; then
+	echo "    smtp port        : $smtp_port"
+fi
+
+
+#----------
+# http port
+#----------
+
+if [ "$http_port" != "" ] ; then
+	echo "    http port        : $http_port"
+fi
+
+
+#-----------
+# https port
+#-----------
+
+if [ "$https_port" != "" ] ; then
+	echo "    https port       : $https_port"
+fi
+
+
+#-----------------------------------
+# Only display details of VNC server
+# if one was started
+#-----------------------------------
+
+if [ "$vnc_screen" != "" ] ; then
+	echo "    vnc port         : $vnc_port"
+	echo "    vnc screen       : $vnc_screen"
+fi
+
+
+#-----------------------
+# /usr/local/src mapping
+#-----------------------
+
+if [ "$hostLocal" != "" ] ; then
+	echo "    hostLocal        : $hostLocal"
+fi
+
+
+#--------------
+# /home mapping
+#--------------
+
+if [ "$hostHome" != "" ] ; then
+	echo "    hostHome         : $hostHome"
+fi
+
+echo ""
+exit 0
+

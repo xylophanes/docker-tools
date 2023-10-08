@@ -1,0 +1,101 @@
+#!/bin/bash 
+#
+#---------------------------------------
+# Save docker container optimising space
+# (C) M.A. O'Neill, Tumbling Dice 2023
+#----------------------------------------
+#---------------
+# Display banner
+#---------------
+
+echo ""
+echo "    dockerexport version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2023"
+echo ""
+
+
+#---------------------
+# Is docker installed?
+#---------------------
+
+docker_installed= $(which dockerd |& grep "no")
+if [ "$docker_installed" != "" ] ; then
+        echo
+        echo "    dockerexport ERROR: docker is not installed on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#--------------------
+# Is dockerd running?
+#--------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+        echo
+        echo "    dockerexport ERROR: dockerd is not running on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#-----------------
+# Parse parameters 
+#-----------------
+
+docker_repository=$(ask "    docker repository name")
+if [ "$docker_repository" = "" ] ; then
+	docker_repository="centos-ssh-dev"
+	echo "    dockerexport WARNING: using default docker repository: '$docker_repository'"
+	echo ""
+elif [ "$docker_repository" = "q" ] || [ "$docker_repository" = "quit" ] ; then
+        exit 1 
+fi
+
+
+docker_image=$(ask "    docker image name")
+if [ "$docker_image" = "" ] ; then
+	echo "    dockerexport ERROR: expecting docker image name"
+	exit 255 
+elif [ "$docker_image" = "q" ] || [ "$docker_image" = "quit" ] ; then
+        exit 1
+fi
+
+
+docker_container=$(ask "    docker container name")
+if [ "$docker_image" = "" ] ; then
+	echo "    dockerexport ERROR: expecting docker container name"
+	exit 255 
+elif [ "$docker_container" == "q" ] || [ "$docker_container" = "quit" ] ; then
+        exit 255 
+
+fi
+
+
+#-------
+# Export
+#-------
+
+datestamp=$(date | awk '{print $2"-"$3"-"$4}')
+
+echo ""
+echo "    flattening container $docker_container and exporting it to ${docker_repository}:${docker_image}@${datestamp}.tar"
+echo ""
+
+docker export $docker_container 1> "${docker_repository}:${docker_image}@$datestamp.tar" 
+if [ "$?" != 0 ] ; then
+	echo ""
+	echo "    dockerexport ERROR: export failed"
+	echo ""
+
+	exit 255
+else
+	echo ""
+	echo "    finished"
+	echo ""
+fi
+
+exit 0

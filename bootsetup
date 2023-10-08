@@ -1,0 +1,386 @@
+#!/bin/bash
+#
+#-----------------------------------------------------
+# Setup boot and halt script for docker (OS) container
+# (C) M.A. O'Neill, Tumbling Dice, 2018-2023
+#-----------------------------------------------------
+#---------------
+# Display banner
+#---------------
+
+echo ""
+echo "    bootsetup version 2.00"
+echo "    (C) M.A. O'Neill, Tumbling Dice, 2023"
+echo ""
+
+
+#---------------------
+# Is docker installed?
+#---------------------
+
+docker_installed=$(which dockerd | grep "no")
+if [ "$docker_installed" != "" ] ; then
+        echo
+        echo "    bootsetup ERROR: docker is not installed on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#--------------------
+# Is dockerd running?
+#--------------------
+
+dockerd_running=$(docker info |& head -1 |& awk '{print $1}' |& grep "Cannot")
+if [ "$dockerd_running" != "" ] ; then
+        echo
+        echo "    bootsetup ERROR: dockerd is not running on this host"
+        echo
+
+        exit 255 
+fi
+
+
+#--------------------------------
+# Get docker container parameters
+# Need PUPS/P3 ask utility
+#--------------------------------
+
+echo ""
+docker images
+echo ""
+
+
+#------------
+# Repository
+#------------
+
+docker_repository=$(ask "    docker repository name")
+if [ "$docker_repository" = "" ] ; then
+	docker_repository="centos"
+	echo "    bootsetup WARNING: using docker repository: '$docker_repository'"
+	echo ""
+elif [ "$docker_repository" = "q" ] || [ "$docker_repository" = "quit" ] ; then
+	exit 1
+fi
+
+
+#--------------------------------
+# Image (in specified repository)
+#--------------------------------
+
+docker_image=$(ask "    docker image name")
+if [ "$docker_image" = "" ] ; then
+	echo "    bootsetup ERROR: expecting docker image name"
+	echo ""
+
+	exit 255 
+elif [ "$docker_image" = "q" ]  || [ "$docker_image"  = "quit" ] ; then
+	exit 1
+fi
+
+
+#-------------------------------------
+# Name of (generated) docker container
+#-------------------------------------
+
+docker_container=$(ask "    docker container name")
+if [ "$docker_container" = "" ] ; then
+	echo "    bootsetup ERROR: expecting docker container name"
+	echo ""
+
+	exit 255 
+elif [ "$docker_container" = "q" ] || [ $docker_container = "quit" ] ; then
+	exit 1
+fi
+
+
+#------------------------------
+# Size of container (gigabytes)
+#------------------------------
+
+mem_size=$(ask "    docker container memory size")
+if [ "$mem_size" = "" ] ; then
+	mem_size="2G"
+	echo "    bootsetup WARNING: using default shared memory size: $mem_size"
+	echo ""
+elif [ "$mem_size" = "q" ]  || [ "$mem_size" = "quit" ] ; then
+	exit 1
+fi
+
+
+#------------------------------
+# Size of container (gigabytes)
+#------------------------------
+
+shm_sizer=$(ask "    docker container shared memory size")
+if [ "$shm_size" = "" ] ; then
+	shm_size="2G"
+	echo "    bootsetup WARNING: using default shared memory size: $shm_size"
+	echo ""
+elif [ "$shm_size" = "q" ]  || [ "$shm_size" = "quit" ] ; then
+	exit 1
+fi
+
+
+#-----------
+# IP address 
+#-----------
+
+ip_addr=$(ask "    docker ip addess  (default host address)")
+if [ "$ip_addr" = "" ] ; then
+	ip_address="0.0.0.0"
+	echo "    bootsetup WARNING: using default ip address: $ip_address"
+	echo ""
+elif [ "$ip_addr" = "q" ]  || [ "$ip_address" = "quit" ] ; then
+	exit 1
+fi
+
+
+#---------
+# ssh port
+#---------
+
+ssh_port=$(ask "    docker container ssh port")
+if [ "$ssh_port" = "" ] ; then
+	echo "    bootsetup WARNING: ssh port is not set"
+	echo ""
+elif [ "$ssh_port" = "q" ]  || [ "$ssh_port" = "quit" ] ; then
+	exit 1
+fi
+
+
+#----------
+# http port
+#----------
+
+http_port=$(ask "    docker container http  port")
+if [ "$ssh_port" = "" ] ; then
+	echo "    bootsetup WARNING: http port is not set"
+	echo ""
+elif [ "$http_port" = "q" ]  || [ "$http_port" = "quit" ] ; then
+	exit 1
+fi
+
+
+#-----------
+# https port 
+#-----------
+
+https_port=$(ask "    docker container secure http port")
+if [ "$https_port" = "" ] ; then
+	echo "    bootsetup WARNING: secure http port is not set"
+	echo ""
+elif [ "$https_port" = "q" ]  || [ "$https_port" = "quit" ] ; then
+	exit 1
+fi
+
+
+#-------------------
+# VNC port/screen/id
+#-------------------
+
+vnc_screen=$(ask "    docker container vnc screen (default :1, no - no VNC service)")
+if [ "$vnc_screen" = "q" ]  || [ "$vnc_screen" = "quit" ] ; then
+	exit 1
+elif [ "$vnc_screen" = "" ] ; then
+	vnc_port="" 
+
+	echo "    bootsetup WARNING: vnc service will not be started when docker container is started"
+	echo ""
+
+elif [ "$vnc_screen" = "q" ]  || [ "$vnc_screen" = "quit" ] ; then
+        exit 1
+elif [ "$vnc_screen" = ":1" ] ; then
+	vnc_port=5901
+	vnc_id=1
+elif [ "$vnc_screen" = ":2" ] ; then
+	vnc_port=5902
+	vnc_id=2
+elif [ "$vnc_screen" = ":3" ] ; then
+	vnc_port=5903
+	vnc_id=3
+elif [ "$vnc_screen" = ":4" ] ; then
+	vnc_port=5904
+	vnc_id=4
+elif [ "$vnc_screen" = ":5" ] ; then
+	vnc_port=5905
+	vnc_id=5
+elif [ "$vnc_screen" = ":6" ] ; then
+	vnc_port=5906
+	vnc_id=6
+elif [ "$vnc_screen" = ":7" ] ; then
+	vnc_port=5907
+	vnc_id=7
+elif [ "$vnc_screen" = ":8" ] ; then
+	vnc_port=5908
+	vnc_id=8
+elif [ "$vnc_screen" = ":9" ] ; then
+	vnc_port=5909
+	vnc_id=9
+elif [ "$vnc_screen" = ":11" ] ; then
+	vnc_port=5911
+	vnc_id=11
+elif [ "$vnc_screen" = ":12" ] ; then
+	vnc_port=5912
+	vnc_id=12
+elif [ "$vnc_screen" = ":13" ] ; then
+	vnc_port=5913
+	vnc_id=13
+elif [ "$vnc_screen" = ":14" ] ; then
+	vnc_port=5914
+	vnc_id=14
+elif [ "$vnc_screen" = ":15" ] ; then
+	vnc_port=5915
+	vnc_id=15
+elif [ "$vnc_screen" = ":16" ] ; then
+	vnc_port=5916
+	vnc_id=16
+else
+	echo ""
+	echo "    bootsetup ERROR: incorrect vnc screen specification [ports/screens 5901-5910/:1-:10]"
+	echo ""
+
+	exit 255 
+fi
+
+
+#------------------
+# VNC setup options
+#------------------
+
+if [ "$vnc_screen" != "" ] ; then
+
+
+	#----------------
+	# Screen geometry
+	#----------------
+
+	vnc_geometry=$(ask "    vnc server screen geometry")
+	if [ "$vnc_geometry" = "q" ]  || [ "$vnc_geometry" = "quit" ] ; then
+		exit 1
+
+
+	#-------------------------
+	# Default screen geometry
+	#------------------------
+
+	elif [ $vnc_geometry = "" ] ; then
+		vnc_geometry="1280x960"
+	fi
+
+
+	#---------------------------
+	# Reset VNC server password
+	#--------------------------
+
+	reset_vnc_passwd=$(ask "    reset docker vnc password for screen $vnc_screen (default no)")
+	if [ "$reset_vnc_passwd" = "q" ]  || [ "$reset_vnc_passwd" = "quit" ] ; then
+		exit 1
+	elif [ "$reset_vnc_passwd" = "" ] ; then
+		reset_vnc_passwd=FALSE
+
+		echo "    bootsetup WARNING: vnc password will not be reset when docker container is started"
+		echo ""
+
+	elif [ "$reset_vnc_passwd" = "q" ] || [ "$reset_vnc_passwd" = "quit" ] ; then
+		exit 1
+	elif [ "$reset_vnc_passwd" = "y" ] || [ "$reset_vnc_passwd" = "yes" ] ; then
+		reset_vnc_passwd=TRUE
+	elif [ "$reset_vnc_passwd" = "n" ] || [ "$reset_vnc_passwd" = "no" ] ; then
+		reset_vnc_passwd=FALSE
+	fi
+else
+	reset_vnc_passwd=FALSE
+fi
+
+
+hostLocal=$(ask "    host local directory (yes or no, default no)")
+if [ "$hostLocal" = "" ] ; then
+	hostLocal="no"
+
+	echo "    bootsetup WARNING: no host local directory set for docker container"
+	echo ""
+
+elif [ "$hostLocal" = "q" ]  || [ "$hostLocal" = "quit" ] ; then
+	exit 1
+fi
+
+hostHome=$(ask "    host home directory (yes or no, default no)")
+if [ "$hostHome" = "" ] ; then
+        hostHome=""
+
+	echo "    bootsetup WARNING: no host home directory set for docker container"
+	echo ""
+
+elif [ "$hostHome" = "q" ] || [ "$hostHome" = "quit" ] ; then
+	exit 1
+fi
+
+
+#--------------------------
+# These files are hardwired
+#--------------------------
+
+if [ "$hostLocal" = "y" ]  || [ "$hostLocal" = "yes" ] ; then
+	hostLocal="/usr/local:/hostLocal"
+elif [ "$hostlocal" = "" ] || [ "$hostLocal" = "n" ] || [ "$hostLocal" = "no" ] ; then
+	hostLocal=""
+fi
+
+if [ "$hostHome" = "y" ] || [ "$hostHome" = "yes" ] ; then
+	hostHome="/home/export:/hostHome"
+elif [ "$hostname" = "" ] || [ "$hostHome" = "n" ] || [ "$hostHome" = "no" ] ; then 
+	hostHome=""
+fi
+
+
+#------------------------------------------
+# Generate boot script for docker container
+#-----------------------------------------
+
+cat dockerboot.in		   	     | \
+sed "s|REPOSITORY|$docker_repository|g"      | \
+sed "s|IMAGE|$docker_image|g"                | \
+sed "s|CONTAINER|$docker_container|g"        | \
+sed "s|MEM_SIZE|$mem_size|g"                 | \
+sed "s|SHM_SIZE|$shm_size|g"                 | \
+sed "s|IP_ADDR|$ip_addr|g"                   | \
+sed "s|SSH_PORT|$ssh_port|g"                 | \
+sed "s|VNC_PORT|$vnc_port|g"                 | \
+sed "s|VNC_ID|$vnc_id|g"                     | \
+sed "s|HTTP_PORT|$http_port|g"               | \
+sed "s|HTTPS_PORT|$https_port|g"             | \
+sed "s|VNC_GEOMETRY|$vnc_geometry|g"         | \
+sed "s|RESET_VNC_PASSWD|$reset_vnc_passwd|g" | \
+sed "s|VNC_SCREEN|$vnc_screen|g"             | \
+sed "s|HOSTLOCAL|$hostLocal|g"               | \
+sed "s|HOSTHOME|$hostHome|g"                 1> $docker_container.dockerboot
+
+chmod +x $docker_container.dockerboot 2> /dev/null
+
+
+#------------------------------------------
+# Generate halt script for docker container
+#------------------------------------------
+
+cat dockerhalt.in			| \
+sed "s|CONTAINER|$docker_container|g"   | \
+sed "s|VNC_SCREEN|$vnc_screen|g"        1> $docker_container.dockerhalt 
+
+chmod +x $docker_container.dockerhalt 2> /dev/null
+
+
+#------------
+# We are done
+#------------
+
+echo ""
+echo "    boot script for docker container '$docker_container' ($docker_container.dockerboot) built"
+echo "    halt script for docker container '$docker_container' ($docker_container.dockerhalt) built"
+echo ""
+echo "    finished"
+echo ""
+
+exit 0
