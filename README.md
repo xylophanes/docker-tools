@@ -1,7 +1,7 @@
 Bash shell script tools to manage docker images
 ===============================================
 
-1. bootsetup: creates a script to deploy a customisable container/
+1. bootsetup: creates a script to deploy a customisable container.
 
 2. dockerboot.in: template script for customisable container boot script (used by
    bootsetup).
