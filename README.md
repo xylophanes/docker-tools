@@ -12,4 +12,4 @@ Bash shell script tools to manage docker images
 4. dockerflatten: utilility to save container and place it in specified
    image repository.
 
-5. dockerexport: utuolitu to export container to specified tar file.
+5. dockerexport: utility to export container to specified tar file.
